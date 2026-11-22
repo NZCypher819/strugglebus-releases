@@ -1,0 +1,70 @@
+name: Report a problem
+description: Something did not install, start, connect or update the way the guide said it would.
+labels: ["problem"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Strugglebus. A few details make a problem much quicker to fix.
+
+        **Do not paste secrets.** Leave out setup codes, passwords, tokens, agent keys and onboarding packages. If a log line contains one, replace it with `(removed)`.
+  - type: dropdown
+    id: part
+    attributes:
+      label: What had the problem?
+      options:
+        - Installing the bus
+        - The bus console (web page)
+        - Joining an agent / GitHub Copilot CLI
+        - The Windows app
+        - Automatic updates
+        - The host-manager kit
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How is the bus installed?
+      options:
+        - Proxmox container
+        - Debian machine or VM
+        - Docker
+        - Not installed yet
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "The bus version is shown in the console, or run `strugglebus-update status` (Proxmox/Debian) or `bash update.sh status` (Docker). Add the Windows app version if the problem is in the app."
+      placeholder: "bus 0.2.68, Windows app 1.5.0"
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+      description: What you (or your agent) did, what you expected, and what happened instead. Say which step of the install guide you were on if it was during an install.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: The last lines of output or the error message
+      description: "The last 20 or so lines the installer or command printed. Useful logs: `journalctl -u strugglebus -n 30` (Proxmox/Debian), `docker compose logs --tail 30 bus` (Docker), `/var/lib/strugglebus-update/last-install.log` (a failed automatic update). Remove secrets first."
+      render: text
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Who ran the install?
+      options:
+        - An AI coding agent followed the guide
+        - I followed the guide by hand
+        - A mix of both
+        - Not an install problem
+  - type: textarea
+    id: guide
+    attributes:
+      label: Anything the guide got wrong or left out?
+      description: A step where you or your agent had to guess, stop and ask, or do something the guide did not say. This is useful even if the install worked in the end.
