@@ -87,6 +87,11 @@ pct exec "$CTID" -- bash -c '
   bash _wheel/strugglebus/selfhost/debian/install.sh --hostname <the name>'
 ```
 
+**Ask the person whether the bus should update itself.** By default it checks
+for a new release once a day and installs it. If they would rather update by
+hand, add `--auto-update off` to the installer command. Either way they can
+change it later with a button in the console; see "Updating".
+
 The installer checks the release files, installs Python, the HTTPS gateway
 (Caddy) and the bus, starts both, and ends by printing the **console address**,
 a one-time **setup code** and the **certificate fingerprint**. Give those three
@@ -114,7 +119,7 @@ for asset in release["assets"]:
     print("downloaded", asset["name"])
 '
 docker run --rm -v "$PWD":/w -w /w python:3.13-slim \
-  sh -c 'python -m zipfile -e strugglebus-*.whl _wheel && cp _wheel/strugglebus/selfhost/docker/* . && rm -r _wheel'
+  sh -c 'python -m zipfile -e strugglebus-*.whl _wheel && cp _wheel/strugglebus/selfhost/docker/* _wheel/strugglebus/selfhost/fetch_release.py . && rm -r _wheel'
 cp env.example .env
 ```
 
@@ -224,15 +229,66 @@ or `--yolo` for an agent that can change a server.
 
 ## Updating
 
-Automatic updates are not part of this install; you choose when to update.
+The bus can update itself from the public release page, and the person in
+charge decides whether it does. The switch is a button in the console:
+**Administration > Updates > Turn automatic updates on / off**. That page also
+shows when the last check ran and what happened.
 
-- **Proxmox / Debian:** download the new release into a new folder in the
-  container, extract the wheel as in A2, and run the new `install.sh` with no
-  `--hostname`. It backs up the database, keeps your settings, and puts the
-  previous version back if the new one cannot be installed.
-- **Docker:** replace the wheel, `requirements.lock` and `SHA256SUMS` in the
-  folder with the new ones (keep `.env`), copy the new `docker/` files over
-  the old ones as in section B, then `docker compose up -d --build`.
+An update backs up the database, replaces the application, and restarts the
+bus, which is unavailable for about a minute. If the new version does not
+start, the previous one is put back. A release that failed to install is not
+tried again automatically.
+
+### Proxmox / Debian
+
+The installer sets up a daily check (around 04:00, the container's local time)
+and turns automatic updates **on** unless it was run with `--auto-update off`.
+Inside the container, as root:
+
+```sh
+strugglebus-update status   # the setting, the installed version, the last check
+strugglebus-update off      # turn automatic updates off (same as the console button)
+strugglebus-update on       # turn them on
+strugglebus-update now      # check and install now, whatever the setting
+```
+
+From the Proxmox host: `pct exec "$CTID" -- strugglebus-update now`.
+
+The daily check needs internet access from the container to github.com,
+pypi.org and the Debian mirrors. The log of the last install is
+`/var/lib/strugglebus-update/last-install.log`.
+
+To update with no internet access from the container, download the new
+release on another machine, copy the files into a new folder in the container,
+extract the wheel as in A2, and run the new `install.sh` with no `--hostname`.
+
+### Docker
+
+A container cannot rebuild itself, so the Docker host runs the update. In the
+install folder on the Docker host:
+
+```sh
+bash update.sh status   # the setting and the installed version
+bash update.sh now      # check and install now, whatever the setting
+```
+
+For automatic updates, schedule the check once. **Ask the person before adding
+this**; it is one line in the crontab of the account that runs Docker
+(`crontab -e`), with the real path of the install folder:
+
+```
+15 4 * * * cd /path/to/strugglebus && bash update.sh check >> update.log 2>&1
+```
+
+`update.sh check` installs only while the console switch is on, so after this
+the person can turn updates on and off from the console without touching the
+host. Without the scheduled line nothing updates by itself, whatever the
+switch says.
+
+Installs made before `update.sh` existed: replace the wheel,
+`requirements.lock` and `SHA256SUMS` in the folder with the new ones (keep
+`.env`), copy the new `docker/` files and `fetch_release.py` over the old ones
+as in section B, then `docker compose up -d --build`.
 
 ## Backups
 
