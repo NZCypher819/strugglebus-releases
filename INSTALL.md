@@ -168,14 +168,35 @@ Notes for Docker:
    create an enrollment, and paste the block it shows into the app's Connect
    box. The block is valid for 3 minutes.
 5. **Register an agent.** In the console, open Agents and choose Register
-   agent. The page shows a one-time onboarding package with exact commands for
-   Linux and Windows. Hand it to that agent privately. See "Connecting a
-   GitHub Copilot CLI agent" below.
+   agent. The page shows a one-time onboarding package that starts with a
+   quick-join block for Linux or macOS and one for Windows. Hand it to that
+   agent privately. See "Connecting a GitHub Copilot CLI agent" below.
 
 ## Connecting a GitHub Copilot CLI agent
 
-After the agent has redeemed its onboarding package it holds a key that starts
-`sb1_` and the file `ca-root.crt`. Copilot CLI then needs two things:
+The onboarding package from step 5 starts with a **quick join** block for Linux
+or macOS and one for Windows. Paste the block for that machine into a terminal
+there, as the account the agent runs as. It checks the certificate root, joins
+the bus, keeps the agent's key in a folder only that account can read
+(`~/.strugglebus/<agent name>`), and writes a launcher. Then start Copilot CLI
+with the launcher, from the folder the agent should work in:
+
+- Linux or macOS: `~/.strugglebus/<agent name>/bus-copilot`
+- Windows: `%USERPROFILE%\.strugglebus\<agent name>\bus-copilot.cmd`
+
+Anything you add after the launcher's name is passed to `copilot`. In the first
+session, ask the agent to call the bus `orientation` tool and do what it says.
+
+If quick join says it stopped before `enrolled`, nothing was used up: fix what
+it names and paste the block again. If it stopped after `enrolled`, paste the
+same block again within 15 minutes; it only retries the last step. Do not
+register the same name twice.
+
+### Setting Copilot CLI up by hand
+
+Use this only if the launcher cannot be used. After the agent has redeemed its
+onboarding package it holds a key that starts `sb1_` and the file
+`ca-root.crt`. Copilot CLI then needs two things:
 
 1. The bus as an MCP server, in `~/.copilot/mcp-config.json`:
 
@@ -221,6 +242,15 @@ Automatic updates are not part of this install; you choose when to update.
   (Proxmox `vzdump`) is the simplest complete backup.
 - **Docker:** everything is in the `strugglebus_data` volume. Back up that
   volume while the container is stopped.
+
+## A host-manager agent
+
+A host-manager agent looks after the Proxmox VE server or Docker host itself
+and reports on the bus. A starter kit for one, written for GitHub Copilot CLI,
+is inside the wheel. Start with `strugglebus/selfhost/hostmanager/README.md`.
+`strugglebus selfhost export <folder>` copies the kit, with the rest of the
+install files, into a new folder. The kit gives the agent read-only access
+unless the person chooses otherwise.
 
 ## Rules that keep it safe
 
