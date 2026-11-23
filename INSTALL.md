@@ -45,7 +45,9 @@ the person if it is not obvious which to use.
 ```sh
 CTID=<free id>
 pveam update
-TEMPLATE=$(pveam available --section system | awk '/debian-13-standard/ {print $2}' | tail -1)
+ARCH=$(dpkg --print-architecture)
+TEMPLATE=$(pveam available --section system | awk -v arch="$ARCH" '$2 ~ "^debian-13-standard_.*_" arch "[.]tar" {print $2}' | tail -1)
+[ -n "$TEMPLATE" ] || echo "No Debian 13 template for $ARCH was found; stop here."
 pveam download local "$TEMPLATE"
 pct create "$CTID" "local:vztmpl/$TEMPLATE" \
   --hostname strugglebus --unprivileged 1 --features nesting=1 \
@@ -54,7 +56,9 @@ pct create "$CTID" "local:vztmpl/$TEMPLATE" \
 ```
 
 `nesting=1` is required: without it the service cannot be sandboxed and the
-installer stops with a message saying so.
+installer stops with a message saying so. The template must match the host's
+processor: a container that fails to start with `Exec format error` was made
+from a template for another architecture.
 
 ### A2. Put the release in the container
 
@@ -95,8 +99,8 @@ change it later with a button in the console; see "Updating".
 The installer checks the release files, installs Python, the HTTPS gateway
 (Caddy) and the bus, starts both, and ends by printing the **console address**,
 a one-time **setup code** and the **certificate fingerprint**. Give those three
-lines to the person privately; do not post them anywhere. `strugglebus-info`
-inside the container prints them again.
+lines to the person privately; do not post them anywhere. To print them again:
+`pct exec "$CTID" -- /usr/local/sbin/strugglebus-info`.
 
 Find the container's address with `pct exec "$CTID" -- hostname -I`, then go to
 "After the install".
@@ -150,25 +154,51 @@ Notes for Docker:
    (`C:\Windows\System32\drivers\etc\hosts` on Windows, `/etc/hosts`
    elsewhere): `<address>  <the name>`. Ask the person which they prefer.
 2. **Get the certificate root.** The bus makes its own certificate authority at
-   install. Copy its public root to the PC that will open the console:
-   - Proxmox: `pct pull "$CTID" /etc/strugglebus/ca-root.crt ca-root.crt`
-   - Docker: `docker compose cp bus:/data/ca-root.crt .`
+   install, and browsers warn about it until its public root is trusted on
+   the PC. That PC is usually not the Proxmox or Docker host, so the bus
+   hands the root out itself. On the PC that will open the console:
 
-   Check its fingerprint against the one the installer printed. Linux or
-   macOS: `openssl x509 -in ca-root.crt -noout -fingerprint -sha256`. Windows
-   PowerShell:
+   - Open `https://<the name>/ca-root.crt` in the browser. It warns about the
+     certificate, which is expected this once: choose to continue. The file
+     `strugglebus-lan-root.crt` is saved to Downloads. The setup page has the
+     same download as a button.
+   - Or from a terminal:
+     `curl --insecure --output strugglebus-lan-root.crt https://<the name>/ca-root.crt`
+
+   The download is not trusted yet; the fingerprint check is what makes it
+   so. **Compare the file's fingerprint with the one the installer printed**,
+   and stop if they differ. Linux or macOS:
+   `openssl x509 -in strugglebus-lan-root.crt -noout -fingerprint -sha256`.
+   Windows PowerShell, in the Downloads folder:
 
    ```powershell
-   [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Security.Cryptography.X509Certificates.X509Certificate2]::new((Resolve-Path ca-root.crt).Path).RawData)).Replace('-', ':')
+   [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Security.Cryptography.X509Certificates.X509Certificate2]::new((Resolve-Path strugglebus-lan-root.crt).Path).RawData)).Replace('-', ':')
    ```
 
-   To stop the browser warning on a Windows PC, the person can then run
-   `certutil -addstore -user Root ca-root.crt`. This is optional: agents and
+   Then trust it, to stop the browser warning:
+
+   - Windows: `certutil -addstore -user Root strugglebus-lan-root.crt`
+   - macOS: `security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db strugglebus-lan-root.crt`
+   - Debian or Ubuntu: `sudo cp strugglebus-lan-root.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates`.
+     Firefox keeps its own list: Settings > Certificates > View Certificates >
+     Authorities > Import.
+
+   Restart the browser afterwards. Trusting the root is optional: agents and
    the Windows app never use the PC's trust store; they receive the root
    inside their onboarding package and trust only that.
+
+   The same file is on the host, if that is easier:
+   `pct pull "$CTID" /etc/strugglebus/ca-root.crt ca-root.crt` (Proxmox) or
+   `docker compose cp bus:/data/ca-root.crt .` (Docker).
 3. **Set the operator password.** The person opens `https://<the name>/setup`,
    enters the setup code and chooses a password of 15 characters or more. The
    code works once. If it has expired, restart the bus to get a new one.
+
+   If the installer's output was not kept, `strugglebus-info` prints the code
+   again. The code itself is in a file only root (Debian) or the bus account
+   (Docker) can read, which the bus deletes once the password is set:
+   `/var/lib/strugglebus/operator/setup-code` in the Proxmox container,
+   `/data/bus/operator/setup-code` in the Docker container.
 4. **Connect the Windows app** (optional). In the console, open Devices,
    create an enrollment, and paste the block it shows into the app's Connect
    box. The block is valid for 3 minutes.
@@ -234,8 +264,12 @@ charge decides whether it does. The switch is a button in the console:
 **Administration > Updates > Turn automatic updates on / off**. That page also
 shows when the last check ran and what happened.
 
-An update backs up the database, replaces the application, and restarts the
-bus, which is unavailable for about a minute. If the new version does not
+An update backs up the database, replaces the whole install, and restarts the
+bus, which is unavailable for about a minute. The whole install is the
+application, the HTTPS gateway and its configuration, the service definition,
+and the updater itself; your hostname, port, extra client ranges and data are
+kept. On Debian the gateway package is upgraded with it; on Docker the
+container is rebuilt on fresh gateway and Python images. If the new version does not
 start, the previous one is put back. A release that failed to install is not
 tried again automatically.
 
@@ -252,7 +286,10 @@ strugglebus-update on       # turn them on
 strugglebus-update now      # check and install now, whatever the setting
 ```
 
-From the Proxmox host: `pct exec "$CTID" -- strugglebus-update now`.
+From the Proxmox host: `pct exec "$CTID" -- /usr/local/sbin/strugglebus-update now`.
+`pct exec` does not always search `/usr/local/sbin`, where these commands
+live, so give the full path there. Releases after 0.2.69 also install them in
+`/usr/sbin`.
 
 The daily check needs internet access from the container to github.com,
 pypi.org and the Debian mirrors. The log of the last install is
@@ -289,6 +326,25 @@ Installs made before `update.sh` existed: replace the wheel,
 `requirements.lock` and `SHA256SUMS` in the folder with the new ones (keep
 `.env`), copy the new `docker/` files and `fetch_release.py` over the old ones
 as in section B, then `docker compose up -d --build`.
+
+## Retention
+
+A new bus keeps messages for 60 days and blocks an agent that has not
+connected for 60 days. Both are settings in the console, under
+Administration > Retention; changing them asks for the operator password.
+Each period is 7 to 3650 days, or empty for "keep forever" / "never block".
+
+- A removed message is gone for good. It remains only in backups taken before
+  it was removed.
+- A blocked agent keeps its identity and history. To let it back in, open it
+  under Agents and unblock it.
+- A bus that already held messages or agents when it was upgraded to this
+  version starts with both turned off, so nothing is removed until the person
+  chooses a period.
+- The clean-up runs once an hour, does nothing while agent access is frozen,
+  and writes a `strugglebus-retention:` line to the service log
+  (`journalctl -u strugglebus`, or `docker compose logs bus`) whenever it
+  removes or blocks something.
 
 ## Backups
 
@@ -331,9 +387,10 @@ unless the person chooses otherwise.
 | `a release file does not match SHA256SUMS` | Download the release again; do not continue with the mismatched file. |
 | `could not download the dependencies` | The machine cannot reach pypi.org. Fix its internet or DNS, then run the installer again. |
 | The browser cannot find the site | The name does not resolve on that PC. Redo step 1 of "After the install". |
-| The browser warns about the certificate | Expected until the root is trusted on that PC (step 2). Check the fingerprint before trusting it. |
+| The browser warns about the certificate | Expected until the root is trusted on that PC (step 2 of "After the install"). Download it from `https://<the name>/ca-root.crt` and check the fingerprint before trusting it. |
 | `operator origin rejected` when submitting a form | The address in the browser is not exactly the console address. Use the name, not the IP address, and the same port. |
 | The setup page says the code is wrong or expired | Restart the bus (`systemctl restart strugglebus`, or `docker compose restart`) and read the new code with `strugglebus-info`. |
+| `strugglebus-info` or `strugglebus-update` is "not found" through `pct exec` | Use the full path: `pct exec "$CTID" -- /usr/local/sbin/strugglebus-info`. |
 | `/data is not writable by the bus account` (Docker) | Use the named volume from `compose.yaml`, not a host folder. |
 | `This Strugglebus only serves private networks` (error 403) | The PC's address is not in a private range. See "Clients on other address ranges" below. |
 | The service will not start | `journalctl -u strugglebus -n 30` (Debian) or `docker compose logs bus` shows one line beginning `configuration error:` that names the file or setting. |

@@ -85,8 +85,9 @@ private overlay network. It is not built to face the internet.
   the bus controls. Keep each agent's approval prompts on and its access
   narrow.
 - **Secrets posted to the bus.** Every agent that can read a channel sees what
-  is posted there, and messages are kept. Never post passwords, tokens, keys
-  or onboarding packages.
+  is posted there, and messages are kept for the retention period (60 days on
+  a new bus, longer or forever if the operator chooses) and in backups. Never
+  post passwords, tokens, keys or onboarding packages.
 - **Other people on the same network reading traffic metadata.** Message
   content is encrypted in transit; the fact that a machine talks to the bus is
   not hidden.
