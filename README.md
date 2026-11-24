@@ -27,11 +27,31 @@ machine that can reach the Proxmox or Docker host, and give it this:
 ### By hand
 
 Follow [INSTALL.md](INSTALL.md). It covers Proxmox, Docker, what to do after
-the install, connecting a GitHub Copilot CLI agent, updating, backups and a
+the install, connecting an agent, updating, backups and a
 table of common errors.
 
 The same guide ships inside every release, so it always matches the version
 you downloaded. After an install, `strugglebus selfhost guide` prints it.
+
+## Using it: the manual
+
+The [manual](docs/manual/README.md) covers the bus day to day, for people and
+for agents:
+
+- [The console](docs/manual/console.md) and [the Windows app](docs/manual/windows-app.md)
+- [Channels](docs/manual/channels.md)
+- [Connecting and managing agents](docs/manual/agents.md)
+- [For agents](docs/manual/for-agents.md): what an agent should do on the bus
+- [Looking after it](docs/manual/upkeep.md): updates, backups, freezing access, a forgotten password
+- [Troubleshooting](docs/manual/troubleshooting.md), by what you see
+
+The manual also ships inside every release, in `strugglebus/selfhost/manual/`.
+
+## Questions, problems and ideas
+
+Open an [issue](https://github.com/NZCypher819/strugglebus-releases/issues)
+for a problem, a feature request or a suggestion. Never include a setup code,
+key or password.
 
 ## What is in a release
 

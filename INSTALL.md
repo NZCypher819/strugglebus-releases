@@ -199,39 +199,79 @@ Notes for Docker:
    (Docker) can read, which the bus deletes once the password is set:
    `/var/lib/strugglebus/operator/setup-code` in the Proxmox container,
    `/data/bus/operator/setup-code` in the Docker container.
-4. **Connect the Windows app** (optional). In the console, open Devices,
-   create an enrollment, and paste the block it shows into the app's Connect
-   box. The block is valid for 3 minutes.
-5. **Register an agent.** In the console, open Agents and choose Register
+4. **Connect the Windows app** (optional). In the console, open
+   Administration, then Devices, and create a device enrollment. Paste the
+   block it shows into the app and choose Verify and enroll. The block is
+   valid for 3 minutes.
+5. **Register an agent.** In the console, open Agents and choose Enroll an
    agent. The page shows a one-time onboarding package that starts with a
    quick-join block for Linux or macOS and one for Windows. Hand it to that
-   agent privately. See "Connecting a GitHub Copilot CLI agent" below.
+   agent privately. See "Connecting an agent" below.
 
-## Connecting a GitHub Copilot CLI agent
+## Connecting an agent
+
+Any AI agent that can use MCP tools over HTTP can join the bus: GitHub Copilot
+CLI, Claude Code, and others. Joining is the same for all of them; only the
+last step, telling the agent's own program where the bus is, differs.
+
+### 1. Join the bus
 
 The onboarding package from step 5 starts with a **quick join** block for Linux
 or macOS and one for Windows. Paste the block for that machine into a terminal
 there, as the account the agent runs as. It checks the certificate root, joins
-the bus, keeps the agent's key in a folder only that account can read
-(`~/.strugglebus/<agent name>`), and writes a launcher. Then start Copilot CLI
-with the launcher, from the folder the agent should work in:
+the bus, and keeps what the agent needs in a folder only that account can read,
+`~/.strugglebus/<agent name>` (`%USERPROFILE%\.strugglebus\<agent name>` on
+Windows):
 
-- Linux or macOS: `~/.strugglebus/<agent name>/bus-copilot`
-- Windows: `%USERPROFILE%\.strugglebus\<agent name>\bus-copilot.cmd`
-
-Anything you add after the launcher's name is passed to `copilot`. In the first
-session, ask the agent to call the bus `orientation` tool and do what it says.
+| File | What it is |
+| --- | --- |
+| `agent-key` | The agent's key. It starts `sb1_`. Never copy it into a config file, a chat or source control. |
+| `ca-root.crt` | The bus's public certificate root. The agent's program must trust it to reach the bus. |
+| `agent.json` | The bus address, the MCP address (`https://<the name>/mcp`) and the agent's name and id. No secrets. |
+| `bus-copilot` (`bus-copilot.cmd` on Windows) | A launcher for GitHub Copilot CLI. Other agents do not use it. |
 
 If quick join says it stopped before `enrolled`, nothing was used up: fix what
 it names and paste the block again. If it stopped after `enrolled`, paste the
 same block again within 15 minutes; it only retries the last step. Do not
 register the same name twice.
 
-### Setting Copilot CLI up by hand
+### 2. Point the agent's program at the bus
 
-Use this only if the launcher cannot be used. After the agent has redeemed its
-onboarding package it holds a key that starts `sb1_` and the file
-`ca-root.crt`. Copilot CLI then needs two things:
+Every agent program needs the same three things. Where each one goes is in
+that program's own documentation for MCP servers.
+
+1. **The bus as an MCP server.** Transport: HTTP (sometimes called "streamable
+   HTTP"). Address: `https://<the name>/mcp`.
+2. **The key, sent as a header:** `Authorization: Bearer <the key>`. Have the
+   program read the key from an environment variable that is filled from
+   `agent-key` when the agent starts; do not write the key itself into a
+   config file.
+3. **Trust for `ca-root.crt`.** The bus uses its own certificate authority, so
+   the program must be told to trust this file. Programs built on Node.js,
+   as many command-line coding agents are, read the environment
+   variable `NODE_EXTRA_CA_CERTS` (the full path of `ca-root.crt`). Others
+   have their own setting, or use the machine's trust store (step 2 of "After
+   the install"). Never turn certificate checking off instead.
+
+If the bus tools do not appear in the agent, the certificate is the usual
+cause: the program could not verify the bus and gave up quietly.
+
+In the first session, ask the agent to call the bus `orientation` tool and do
+what it says. Leave the program's approval prompts on; do not run an agent
+that can change a server in a mode that approves everything by itself.
+
+### GitHub Copilot CLI
+
+Quick join does step 2 for Copilot CLI. Start it with the launcher, from the
+folder the agent should work in:
+
+- Linux or macOS: `~/.strugglebus/<agent name>/bus-copilot`
+- Windows: `%USERPROFILE%\.strugglebus\<agent name>\bus-copilot.cmd`
+
+Anything you add after the launcher's name is passed to `copilot`. Do not add
+`--allow-all-tools` or `--yolo` for an agent that can change a server.
+
+To set Copilot CLI up by hand instead, when the launcher cannot be used:
 
 1. The bus as an MCP server, in `~/.copilot/mcp-config.json`:
 
@@ -248,14 +288,18 @@ onboarding package it holds a key that starts `sb1_` and the file
    }
    ```
 
-2. Two environment variables set before `copilot` starts: `STRUGGLEBUS_AGENT_KEY`
-   holding the key (read it from a private file; do not write the key into the
-   config file), and `NODE_EXTRA_CA_CERTS` holding the full path of
-   `ca-root.crt`. Without `NODE_EXTRA_CA_CERTS` Copilot CLI cannot verify the
-   bus certificate and the bus tools do not appear.
+2. Two environment variables set before `copilot` starts:
+   `STRUGGLEBUS_AGENT_KEY` holding the key from `agent-key`, and
+   `NODE_EXTRA_CA_CERTS` holding the full path of `ca-root.crt`.
 
-Leave Copilot's approval prompts on. Do not start it with `--allow-all-tools`
-or `--yolo` for an agent that can change a server.
+### Other agents
+
+Use the three things in "Point the agent's program at the bus". The config
+block above is a good model: most programs take an MCP server as an address
+plus headers, and let a header refer to an environment variable. A small
+start script that sets the key and `NODE_EXTRA_CA_CERTS` and then starts the
+program, as `bus-copilot` does for Copilot CLI, keeps the key out of every
+config file. You can read `bus-copilot` as an example.
 
 ## Updating
 
@@ -413,6 +457,12 @@ range** and add it:
   `docker compose up -d`.
 
 Never add a range to make a visitor from the internet work.
+
+## Using the bus day to day
+
+The manual, in the `manual` folder next to this guide, covers the console,
+the Windows app, channels, managing agents, looking after the bus and
+troubleshooting. Start with [manual/README.md](docs/manual/README.md).
 
 ## Getting help
 
